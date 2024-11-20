@@ -1,21 +1,31 @@
 #cloud-config
+fqdn: vps00.domain.co
+hostname: vps00.domain.co
+locale: de_DE.UTF-8
+timezone: Europe/Berlin
+package_update: true
+package_upgrade: true
 users:
-  - name: yazan
-    groups: users, admin
-    sudo: ALL=(ALL) NOPASSWD:ALL
+  - name: joe
+    groups: users #, admin, sudo, www-data, docker
+    #sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     ssh_authorized_keys:
       - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGybcnHy5C2tOInnOusSdB5hLLzv7v8wbXA9W6R0Ld4F
 packages:
   - fail2ban
   - ufw
-package_update: true
-package_upgrade: true
 runcmd:
   - printf "[sshd]\nenabled = true\nbanaction = iptables-multiport" > /etc/fail2ban/jail.local
   - systemctl enable fail2ban
-  - ufw allow 22/tcp
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow from 172.16.0.0/24 proto tcp to any port 2222 # very creative
+  - ufw allow from 172.16.0.0/24 proto tcp to any port 80
+  - ufw allow from 172.16.0.0/24 proto tcp to any port 443
+  - ufw allow from 172.16.0.0/24 proto udp to any port 51820 # wg vpn
   - ufw enable
+  - sed -i 's/[#]*Port 22/Port 2222/g' /etc/ssh/sshd_config
   - sed -i -e '/^\(#\|\)PermitRootLogin/s/^.*$/PermitRootLogin no/' /etc/ssh/sshd_config
   - sed -i -e '/^\(#\|\)PasswordAuthentication/s/^.*$/PasswordAuthentication no/' /etc/ssh/sshd_config
   - sed -i -e '/^\(#\|\)KbdInteractiveAuthentication/s/^.*$/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config
@@ -25,5 +35,20 @@ runcmd:
   - sed -i -e '/^\(#\|\)X11Forwarding/s/^.*$/X11Forwarding no/' /etc/ssh/sshd_config
   - sed -i -e '/^\(#\|\)AllowAgentForwarding/s/^.*$/AllowAgentForwarding no/' /etc/ssh/sshd_config
   - sed -i -e '/^\(#\|\)AuthorizedKeysFile/s/^.*$/AuthorizedKeysFile .ssh\/authorized_keys/' /etc/ssh/sshd_config
-  - sed -i '$a AllowUsers yazan' /etc/ssh/sshd_config
+  - sed -i '$a AllowUsers joe' /etc/ssh/sshd_config
+  - bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)"
+  - |
+    curl -d "$(cat << EOF
+    Server Setup Complete! See You Later Alligator!
+    Hostname: $(hostname -f)
+    IP: $(curl -s ifconfig.me)
+    Kernel: $(uname -r)
+    CPU: $(lscpu | grep 'Model name' | cut -f 2 -d ":")
+    Memory: $(free -h | awk '/^Mem:/ {print $2}')
+    Disk: $(df -h / | awk 'NR==2 {print $2}')
+    UFW Status: $(ufw status | head -n1)
+    Fail2ban Status: $(systemctl is-active fail2ban)
+    SSH Port: $(grep '^Port' /etc/ssh/sshd_config | awk '{print $2}')
+    EOF
+    )" https://ntfy.sh/about-me-hc-vps00
   - reboot
